@@ -1,0 +1,84 @@
+export type UserRole = "admin" | "attendant";
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  username: string | null;
+  role: UserRole;
+  active: boolean;
+  created_at: string;
+}
+
+export interface Product {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  current_stock: number;
+  minimum_stock: number;
+  price: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type PaymentMethod = "cash" | "pix" | "card";
+
+export type SaleStatus = "pending" | "paid" | "cancelled";
+
+/** Ciclo de vida de um pedido no balcão de preparo (KDS). */
+export type OrderStatus =
+  | "PENDING"
+  | "PREPARING"
+  | "READY"
+  | "DELIVERED"
+  | "CANCELLED";
+
+export interface OrderItem {
+  id: string;
+  order_id: string;
+  product_id: string | null;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export interface Order {
+  id: string;
+  external_id: string | null;
+  order_number: string | null;
+  table_identifier: string | null;
+  customer_name: string | null;
+  status: OrderStatus;
+  total_amount: number;
+  notes: string | null;
+  source: string;
+  created_at: string;
+  updated_at: string;
+  items: OrderItem[];
+}
+
+/** Item enviado no payload de ingestão (webhook ou simulador). */
+export interface OrderIngestItem {
+  product_id?: string | null;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  notes?: string | null;
+}
+
+/** Payload normalizado aceito pela função `ingest_order`. */
+export interface OrderIngestPayload {
+  external_id?: string | null;
+  order_number?: string | null;
+  table_identifier?: string | null;
+  customer_name?: string | null;
+  status?: OrderStatus;
+  total_amount?: number;
+  notes?: string | null;
+  source?: string;
+  items: OrderIngestItem[];
+}
