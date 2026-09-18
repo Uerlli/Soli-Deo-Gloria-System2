@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import OrderCard from "@/pages/balcao/components/OrderCard";
 import SimulateOrderModal from "@/pages/balcao/components/SimulateOrderModal";
+import PaymentPromptModal from "@/pages/balcao/components/PaymentPromptModal";
 import { useKdsOrders, type KdsConnection } from "@/hooks/useKdsOrders";
 import { useKitchenSound } from "@/hooks/useKitchenSound";
 import { STATUS_META } from "@/pages/balcao/utils";
-import type { Order, OrderStatus } from "@/types";
+import type { Order, OrderStatus, PaymentMethod } from "@/types";
 
 interface ColumnDef {
   status: OrderStatus;
@@ -65,6 +66,7 @@ export default function BalcaoPage() {
     newOrderSignal,
     refetch,
     updateOrderStatus,
+    cancelOrder,
   } = useKdsOrders();
 
   const { enabled, enable, disable, playChime } = useKitchenSound();
@@ -72,6 +74,8 @@ export default function BalcaoPage() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [busyId, setBusyId] = useState<string | null>(null);
   const [simulateOpen, setSimulateOpen] = useState(false);
+  const [paymentOrder, setPaymentOrder] = useState<Order | null>(null);
+  const [paymentBusy, setPaymentBusy] = useState(false);
   const [toast, setToast] = useState<{ text: string; tone: "success" | "error" } | null>(
     null
   );
@@ -126,6 +130,11 @@ export default function BalcaoPage() {
   const handleAdvance = async (order: Order) => {
     const next = STATUS_META[order.status].next;
     if (!next) return;
+    // A entrega exige a forma de pagamento antes de concluir o pedido.
+    if (next === "DELIVERED") {
+      setPaymentOrder(order);
+      return;
+    }
     setBusyId(order.id);
     const { error: updateError } = await updateOrderStatus(order.id, next);
     setBusyId(null);
@@ -134,14 +143,31 @@ export default function BalcaoPage() {
     }
   };
 
+  const handleConfirmPayment = async (method: PaymentMethod) => {
+    if (!paymentOrder) return;
+    setPaymentBusy(true);
+    const { error: updateError } = await updateOrderStatus(
+      paymentOrder.id,
+      "DELIVERED",
+      method
+    );
+    setPaymentBusy(false);
+    if (updateError) {
+      setToast({ text: updateError, tone: "error" });
+      return;
+    }
+    setPaymentOrder(null);
+    setToast({ text: "Pedido entregue e pagamento registrado.", tone: "success" });
+  };
+
   const handleCancel = async (order: Order) => {
     setBusyId(order.id);
-    const { error: updateError } = await updateOrderStatus(order.id, "CANCELLED");
+    const { error: cancelError } = await cancelOrder(order.id);
     setBusyId(null);
     setToast(
-      updateError
-        ? { text: updateError, tone: "error" }
-        : { text: "Pedido cancelado.", tone: "success" }
+      cancelError
+        ? { text: cancelError, tone: "error" }
+        : { text: "Pedido cancelado e estoque devolvido.", tone: "success" }
     );
   };
 
@@ -324,6 +350,14 @@ export default function BalcaoPage() {
         open={simulateOpen}
         onClose={() => setSimulateOpen(false)}
         onDispatched={(message) => setToast({ text: message, tone: "success" })}
+      />
+
+      <PaymentPromptModal
+        open={paymentOrder !== null}
+        order={paymentOrder}
+        busy={paymentBusy}
+        onClose={() => setPaymentOrder(null)}
+        onConfirm={(method) => void handleConfirmPayment(method)}
       />
 
       {toast && (

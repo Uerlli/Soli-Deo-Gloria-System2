@@ -19,6 +19,7 @@ export interface Product {
   minimum_stock: number;
   price: number;
   active: boolean;
+  requires_preparation: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -56,6 +57,7 @@ export interface Order {
   total_amount: number;
   notes: string | null;
   source: string;
+  payment_method: PaymentMethod | null;
   created_at: string;
   updated_at: string;
   items: OrderItem[];
@@ -80,5 +82,6 @@ export interface OrderIngestPayload {
   total_amount?: number;
   notes?: string | null;
   source?: string;
+  payment_method?: PaymentMethod | null;
   items: OrderIngestItem[];
 }

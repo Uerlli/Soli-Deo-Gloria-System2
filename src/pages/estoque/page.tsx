@@ -9,6 +9,7 @@ import { useInventory } from "@/hooks/useInventory";
 import type {
   InventoryConnection,
   InventoryProduct,
+  NewProductInput,
   ProductSettingsInput,
   StockMovementInput,
 } from "@/types/inventory";
@@ -58,6 +59,7 @@ export default function EstoquePage() {
     statusOf,
     registerMovement,
     updateSettings,
+    createProduct,
     dismissAlert,
   } = useInventory();
 
@@ -136,6 +138,14 @@ export default function EstoquePage() {
     setBusyId(null);
     if (!result.error) {
       setToast({ text: "Configurações do produto atualizadas.", tone: "success" });
+    }
+    return result;
+  };
+
+  const handleCreateProduct = async (input: NewProductInput) => {
+    const result = await createProduct(input);
+    if (!result.error) {
+      setToast({ text: "Produto cadastrado com sucesso.", tone: "success" });
     }
     return result;
   };
@@ -366,8 +376,10 @@ export default function EstoquePage() {
         open={restock.open}
         productId={restock.productId}
         products={products}
+        isAdmin={isAdmin}
         onClose={() => setRestock({ open: false, productId: null })}
         onSubmit={handleRestock}
+        onCreate={handleCreateProduct}
       />
 
       <StockWasteModal

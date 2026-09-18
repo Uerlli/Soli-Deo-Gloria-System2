@@ -1,11 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import BrandEmblem from "@/components/feature/BrandEmblem";
+import OrderSystemModal from "@/pages/pdv/components/OrderSystemModal";
 import {
   useCatalog,
   getStockStatus,
   type StockStatus,
 } from "@/hooks/useCatalog";
+import type { ComposerSeed } from "@/components/feature/OrderComposer";
 import type { Product } from "@/types";
 
 const currency = new Intl.NumberFormat("pt-BR", {
@@ -19,16 +21,24 @@ const stockBadge: Record<StockStatus, { label: string; className: string }> = {
   out: { label: "Esgotado", className: "bg-primary-100 text-primary-800" },
 };
 
-function formatStock(value: number, unit: string) {
-  const formatted = Number.isInteger(value) ? value.toString() : value.toFixed(2);
-  return `${formatted} ${unit}${value === 1 ? "" : "s"}`;
-}
-
 export default function PdvPage() {
   const { profile } = useAuth();
   const { products, categories, summary, loading, error, refetch } = useCatalog();
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Todos");
+
+  const [orderOpen, setOrderOpen] = useState(false);
+  const [seed, setSeed] = useState<ComposerSeed | null>(null);
+  const seedCounter = useRef(0);
+  const [toast, setToast] = useState<{ text: string; tone: "success" | "error" } | null>(
+    null
+  );
+
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timeout = window.setTimeout(() => setToast(null), 3600);
+    return () => window.clearTimeout(timeout);
+  }, [toast]);
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
@@ -42,6 +52,18 @@ export default function PdvPage() {
     });
   }, [products, query, category]);
 
+  const handleSelectProduct = (product: Product) => {
+    seedCounter.current += 1;
+    setSeed({
+      token: seedCounter.current,
+      productId: product.id,
+      name: product.name,
+      price: Number(product.price),
+      stock: Number(product.current_stock),
+    });
+    setOrderOpen(true);
+  };
+
   const today = new Date().toLocaleDateString("pt-BR", {
     weekday: "long",
     day: "2-digit",
@@ -51,7 +73,7 @@ export default function PdvPage() {
   return (
     <div className="flex min-h-full flex-col">
       <header className="relative border-b border-background-300/60 bg-background-50 px-5 py-5 md:px-8">
-        <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <p className="font-label text-[10px] uppercase tracking-[0.24em] text-primary-600">
               Ponto de venda
@@ -62,11 +84,21 @@ export default function PdvPage() {
             <p className="mt-1 text-sm capitalize text-foreground-500">{today}</p>
           </div>
 
-          <BrandEmblem
-            className="mt-1"
-            heightClass="h-10 md:h-12"
-            colorClass="text-foreground-950"
-          />
+          <div className="flex items-center gap-3">
+            <BrandEmblem
+              className="mt-1"
+              heightClass="h-10 md:h-12"
+              colorClass="text-foreground-950"
+            />
+            <button
+              type="button"
+              onClick={() => setOrderOpen(true)}
+              className="flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-md bg-primary-500 px-4 py-2.5 text-sm font-medium text-background-50 transition-colors hover:bg-primary-600"
+            >
+              <i className="ri-shopping-bag-3-line text-lg" />
+              Sistema de Pedidos
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
@@ -173,28 +205,62 @@ export default function PdvPage() {
         {!loading && !error && filtered.length > 0 && (
           <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {filtered.map((product) => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard
+                key={product.id}
+                product={product}
+                onSelect={handleSelectProduct}
+              />
             ))}
           </div>
         )}
 
         <p className="mt-8 flex items-center gap-2 text-xs text-foreground-500">
           <i className="ri-information-line text-base" />
-          Carrinho, formas de pagamento e baixa de estoque entram na próxima
-          etapa.
+          Toque em qualquer produto para abrir o carrinho do Sistema de Pedidos com ele já
+          adicionado. As vendas lançadas aqui são registradas como vendas reais.
         </p>
       </div>
+
+      <OrderSystemModal
+        open={orderOpen}
+        seed={seed}
+        onClose={() => setOrderOpen(false)}
+        onDispatched={(message) => setToast({ text: message, tone: "success" })}
+      />
+
+      {toast && (
+        <div className="pointer-events-none fixed bottom-6 right-6 z-[60] animate-fade-up">
+          <div
+            className={[
+              "flex items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium text-background-50",
+              toast.tone === "success" ? "bg-secondary-600" : "bg-primary-600",
+            ].join(" ")}
+          >
+            <i className="ri-checkbox-circle-line text-lg" />
+            {toast.text}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ProductCard({ product }: { product: Product }) {
+function ProductCard({
+  product,
+  onSelect,
+}: {
+  product: Product;
+  onSelect: (product: Product) => void;
+}) {
   const status = getStockStatus(product);
   const badge = stockBadge[status];
   const isOut = status === "out";
 
   return (
     <article
+      onClick={() => {
+        if (!isOut) onSelect(product);
+      }}
       className={[
         "group relative flex flex-col justify-between overflow-hidden rounded-lg border bg-background-50 p-4 transition-colors duration-150",
         isOut
@@ -229,11 +295,12 @@ function ProductCard({ product }: { product: Product }) {
         <span className="numeric font-heading text-xl font-semibold text-primary-600">
           {currency.format(Number(product.price))}
         </span>
-        <span className="text-xs text-foreground-500">
-          {isOut
-            ? "Sem estoque"
-            : formatStock(Number(product.current_stock), product.unit)}
-        </span>
+        {!isOut && (
+          <span className="flex items-center gap-1 text-xs font-medium text-foreground-500 transition-colors group-hover:text-primary-600">
+            <i className="ri-add-circle-line text-base" />
+            Adicionar
+          </span>
+        )}
       </div>
     </article>
   );

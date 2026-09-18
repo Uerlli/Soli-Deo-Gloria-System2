@@ -42,7 +42,7 @@ export default function OrderCard({
   return (
     <article
       className={[
-        "relative flex flex-col overflow-hidden rounded-lg border bg-background-50 animate-fade-up",
+        "group relative flex flex-col overflow-hidden rounded-lg border bg-background-50 animate-fade-up",
         urgencyMeta.card,
       ].join(" ")}
     >
@@ -173,7 +173,7 @@ export default function OrderCard({
               title="Cancelar pedido"
               aria-label="Cancelar pedido"
               disabled={busy}
-              className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-md border border-background-300 text-foreground-500 transition-colors hover:border-primary-300 hover:text-primary-600 disabled:opacity-60"
+              className="flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-md border border-background-300 text-foreground-500 transition-all hover:border-primary-300 hover:text-primary-600 disabled:opacity-60 lg:opacity-0 lg:group-hover:opacity-100 lg:focus-visible:opacity-100"
             >
               <i className="ri-delete-bin-6-line text-lg" />
             </button>

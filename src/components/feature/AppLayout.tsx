@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "PDV", to: "/pdv", icon: "ri-store-2-line", available: true },
   { label: "Balcão (KDS)", to: "/balcao", icon: "ri-fire-line", available: true },
   { label: "Estoque", to: "/estoque", icon: "ri-archive-2-line", available: true },
+  { label: "Comandas", to: "/comandas", icon: "ri-restaurant-2-line", available: true },
   { label: "Vendas", to: "/vendas", icon: "ri-receipt-line", adminOnly: true, available: false },
   { label: "Relatórios", to: "/relatorios", icon: "ri-bar-chart-2-line", adminOnly: true, available: false },
   { label: "Usuários", to: "/usuarios", icon: "ri-group-line", adminOnly: true, available: false },

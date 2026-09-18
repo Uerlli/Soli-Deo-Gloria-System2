@@ -23,6 +23,7 @@ export default function StockSettingsModal({
   const [minimumStock, setMinimumStock] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [price, setPrice] = useState("");
+  const [requiresPrep, setRequiresPrep] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -38,6 +39,7 @@ export default function StockSettingsModal({
     setMinimumStock(String(Number(current.minimum_stock)));
     setUnitCost(String(Number(current.unit_cost)));
     setPrice(String(Number(current.price)));
+    setRequiresPrep(Boolean(current.requires_preparation));
     setFormError(null);
   }, [open, product?.id]);
 
@@ -68,6 +70,7 @@ export default function StockSettingsModal({
       minimumStock: min,
       unitCost: cost,
       price: salePrice,
+      requiresPreparation: requiresPrep,
     });
     setSubmitting(false);
 
@@ -170,6 +173,34 @@ export default function StockSettingsModal({
             </span>
           </div>
         )}
+
+        <button
+          type="button"
+          onClick={() => setRequiresPrep((value) => !value)}
+          className="flex w-full cursor-pointer items-center justify-between rounded-md border border-background-300 bg-background-50 px-3 py-2.5 text-left transition-colors hover:bg-background-100"
+        >
+          <span>
+            <span className="block text-sm font-medium text-foreground-900">
+              Precisa de preparo
+            </span>
+            <span className="block text-[11px] text-foreground-500">
+              Itens sem preparo entram direto como “Prontos para entrega”.
+            </span>
+          </span>
+          <span
+            className={[
+              "flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
+              requiresPrep ? "bg-primary-500" : "bg-background-300",
+            ].join(" ")}
+          >
+            <span
+              className={[
+                "h-5 w-5 rounded-full bg-background-50 transition-transform",
+                requiresPrep ? "translate-x-5" : "translate-x-0",
+              ].join(" ")}
+            />
+          </span>
+        </button>
 
         {formError && (
           <p className="flex items-center gap-1.5 rounded-md bg-primary-50 px-3 py-2 text-xs text-primary-800">

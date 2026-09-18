@@ -22,7 +22,7 @@ export function useCatalog() {
       const { data, error: fetchError } = await supabase
         .from("products_catalog")
         .select(
-          "id, name, category, unit, current_stock, minimum_stock, price, active, created_at, updated_at"
+          "id, name, category, unit, current_stock, minimum_stock, price, active, requires_preparation, created_at, updated_at"
         )
         .order("category", { ascending: true })
         .order("name", { ascending: true });

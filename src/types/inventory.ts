@@ -6,7 +6,8 @@ export type StockMovementType =
   | "SALE_DEDUCTION"
   | "WASTE"
   | "INTERNAL_CONSUMPTION"
-  | "ADJUSTMENT";
+  | "ADJUSTMENT"
+  | "ORDER_CANCELLATION";
 
 /** Linha do livro-razão de estoque (extrato auditável). */
 export interface StockMovement {
@@ -45,6 +46,19 @@ export interface ProductSettingsInput {
   minimumStock?: number;
   unitCost?: number;
   price?: number;
+  requiresPreparation?: boolean;
+}
+
+/** Entrada aceita pela RPC `create_product` (somente admin). */
+export interface NewProductInput {
+  name: string;
+  category: string;
+  unit: string;
+  initialStock: number;
+  unitCost: number;
+  price: number;
+  minimumStock: number;
+  requiresPreparation: boolean;
 }
 
 export type InventoryConnection = "connecting" | "live" | "reconnecting";

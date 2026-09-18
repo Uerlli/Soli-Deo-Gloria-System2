@@ -9,6 +9,8 @@ interface ModalShellProps {
   children: ReactNode;
   footer: ReactNode;
   sizeClass?: string;
+  /** Ação opcional exibida ao lado do título (ex.: botão "+"). */
+  titleAction?: ReactNode;
 }
 
 export default function ModalShell({
@@ -20,6 +22,7 @@ export default function ModalShell({
   children,
   footer,
   sizeClass = "max-w-lg",
+  titleAction,
 }: ModalShellProps) {
   useEffect(() => {
     if (!open) return undefined;
@@ -48,9 +51,12 @@ export default function ModalShell({
               <i className={`${icon} text-xl`} />
             </span>
             <div>
-              <h2 className="font-heading text-lg font-medium leading-tight text-foreground-950">
-                {title}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-heading text-lg font-medium leading-tight text-foreground-950">
+                  {title}
+                </h2>
+                {titleAction}
+              </div>
               {subtitle && (
                 <p className="mt-0.5 text-xs text-foreground-500">{subtitle}</p>
               )}

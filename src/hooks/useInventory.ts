@@ -5,6 +5,7 @@ import { getStockStatus, type StockStatus } from "@/hooks/useCatalog";
 import type {
   InventoryConnection,
   InventoryProduct,
+  NewProductInput,
   ProductSettingsInput,
   StockAlert,
   StockMovement,
@@ -12,9 +13,9 @@ import type {
 } from "@/types/inventory";
 
 const PRODUCT_COLUMNS_ADMIN =
-  "id, name, category, unit, current_stock, minimum_stock, unit_cost, price, active, created_at, updated_at";
+  "id, name, category, unit, current_stock, minimum_stock, unit_cost, price, active, requires_preparation, created_at, updated_at";
 const PRODUCT_COLUMNS_CATALOG =
-  "id, name, category, unit, current_stock, minimum_stock, price, active, created_at, updated_at";
+  "id, name, category, unit, current_stock, minimum_stock, price, active, requires_preparation, created_at, updated_at";
 
 interface InventorySummary {
   total: number;
@@ -39,6 +40,7 @@ interface UseInventoryResult {
   statusOf: (product: InventoryProduct) => StockStatus;
   registerMovement: (input: StockMovementInput) => Promise<{ error: string | null }>;
   updateSettings: (input: ProductSettingsInput) => Promise<{ error: string | null }>;
+  createProduct: (input: NewProductInput) => Promise<{ error: string | null }>;
   dismissAlert: (id: string) => void;
 }
 
@@ -103,6 +105,7 @@ export function useInventory(): UseInventoryResult {
           minimum_stock: Number(record.minimum_stock ?? 0),
           price: Number(record.price ?? 0),
           unit_cost: isAdmin ? Number(record.unit_cost ?? 0) : 0,
+          requires_preparation: Boolean(record.requires_preparation ?? true),
           active: Boolean(record.active ?? true),
           created_at: String(record.created_at ?? ""),
           updated_at: String(record.updated_at ?? ""),
@@ -282,6 +285,7 @@ export function useInventory(): UseInventoryResult {
           p_minimum_stock: input.minimumStock ?? null,
           p_unit_cost: input.unitCost ?? null,
           p_price: input.price ?? null,
+          p_requires_preparation: input.requiresPreparation ?? null,
         });
 
         if (rpcError) {
@@ -291,6 +295,40 @@ export function useInventory(): UseInventoryResult {
         return { error: null };
       } catch {
         return { error: "Não foi possível salvar as configurações." };
+      }
+    },
+    [refresh]
+  );
+
+  const createProduct = useCallback(
+    async (input: NewProductInput) => {
+      try {
+        const { error: rpcError } = await supabase.rpc("create_product", {
+          p_payload: {
+            name: input.name,
+            category: input.category,
+            unit: input.unit,
+            initial_stock: input.initialStock,
+            unit_cost: input.unitCost,
+            price: input.price,
+            minimum_stock: input.minimumStock,
+            requires_preparation: input.requiresPreparation,
+          },
+        });
+
+        if (rpcError) {
+          if (rpcError.message?.includes("not authorized")) {
+            return { error: "Apenas administradores podem cadastrar produtos." };
+          }
+          if (rpcError.message?.includes("name is required")) {
+            return { error: "Informe o nome do produto." };
+          }
+          return { error: "Não foi possível cadastrar o produto. Tente novamente." };
+        }
+        await refresh();
+        return { error: null };
+      } catch {
+        return { error: "Não foi possível cadastrar o produto." };
       }
     },
     [refresh]
@@ -346,6 +384,7 @@ export function useInventory(): UseInventoryResult {
     statusOf,
     registerMovement,
     updateSettings,
+    createProduct,
     dismissAlert,
   };
 }

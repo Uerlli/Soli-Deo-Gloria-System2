@@ -5,6 +5,7 @@ import Login from "@/pages/login/page";
 import Pdv from "@/pages/pdv/page";
 import Balcao from "@/pages/balcao/page";
 import Estoque from "@/pages/estoque/page";
+import Comandas from "@/pages/comandas/page";
 import AppLayout from "@/components/feature/AppLayout";
 import { RequireAuth } from "@/components/feature/RouteGuards";
 
@@ -36,6 +37,10 @@ const routes: RouteObject[] = [
       {
         path: "estoque",
         element: <Estoque />,
+      },
+      {
+        path: "comandas",
+        element: <Comandas />,
       },
       {
         path: "*",

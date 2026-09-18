@@ -13,6 +13,7 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 - `/pdv` — Ponto de Venda (catálogo + carrinho + pagamento)
 - `/balcao` — Balcão de Preparo / KDS (fila de pedidos em tempo real vinda da Moderninha Smart 2)
 - `/estoque` — Gestão de Estoque & Insumos (KPIs, tabela, entradas, perdas, extrato)
+- `/comandas` — Comandas (pedidos agrupados por mesa, total acumulado e finalização com pagamento)
 - `/vendas` — Histórico de vendas (somente Admin para financeiro)
 - `/relatorios` — Relatórios (somente Admin)
 - `/usuarios` — Gestão de usuários (somente Admin)
@@ -46,6 +47,14 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 - [x] Estoque: extrato auditável de movimentações (livro-razão) em tempo real
 - [x] Estoque: alerta em tempo real quando uma venda derruba o saldo para baixo/esgotado
 - [x] Estoque: configuração de mínimo de alerta, custo e preço (admin)
+- [x] PDV: "Sistema de Pedidos" (carrinho movido do simulador) gravando vendas reais (source `pdv`)
+- [x] PDV: clique no produto abre o carrinho com o item já adicionado
+- [x] PDV: cartões sem a quantidade em estoque (mantendo a etiqueta de status)
+- [x] Forma de pagamento (Dinheiro / Pix / Cartão) na finalização do pedido
+- [x] Cancelamento de pedido (hover no desktop, sempre visível no mobile/tablet) com devolução de estoque
+- [x] Estoque: cadastro de produto novo dentro do modal de entrada de mercadoria (ícone "+", admin)
+- [x] Produtos: flag "precisa de preparo" (itens sem preparo já entram como "Prontos para entrega")
+- [x] Comandas: agrupamento por mesa, total acumulado por rodadas e finalização com pagamento
 
 ## 4. Data Model Design
 
@@ -73,6 +82,7 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 | unit_cost | numeric | Custo unitário |
 | price | numeric | Preço de venda |
 | active | boolean | Produto ativo |
+| requires_preparation | boolean | Se false, o item já entra como "Pronto para entrega" |
 | created_at | timestamptz | Criado em |
 | updated_at | timestamptz | Atualizado em |
 
@@ -92,7 +102,7 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 |-------|------|-------------|
 | id | uuid | PK |
 | product_id | uuid | FK products (on delete cascade) |
-| movement_type | stock_movement_type (enum) | `ENTRY` / `SALE_DEDUCTION` / `WASTE` / `INTERNAL_CONSUMPTION` / `ADJUSTMENT` |
+| movement_type | stock_movement_type (enum) | `ENTRY` / `SALE_DEDUCTION` / `WASTE` / `INTERNAL_CONSUMPTION` / `ADJUSTMENT` / `ORDER_CANCELLATION` |
 | quantity | numeric(12,2) | Magnitude movimentada |
 | previous_stock | numeric(12,2) | Saldo antes |
 | new_stock | numeric(12,2) | Saldo depois |
@@ -135,7 +145,8 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 | status | order_status (enum) | `PENDING` / `PREPARING` / `READY` / `DELIVERED` / `CANCELLED` |
 | total_amount | numeric(12,2) | Valor total |
 | notes | text | Observações gerais do pedido |
-| source | text | Origem (`pagbank` / `simulator`) |
+| source | text | Origem (`pagbank` / `pdv` / `simulator`) |
+| payment_method | text | `cash` / `pix` / `card` (definido na entrega/finalização) |
 | created_at | timestamptz | Recebido em |
 | updated_at | timestamptz | Atualizado em |
 
@@ -151,13 +162,19 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 | notes | text | Observação/customização do item |
 
 ### Função: ingest_order(p_payload jsonb)
-`SECURITY DEFINER` — grava pedido + itens atomicamente, resolve `product_id` por nome quando não vem UUID, dá baixa no estoque (registrando `SALE_DEDUCTION` em `stock_movements`) e evita duplicidade por `external_id`. Usada tanto pelo webhook quanto pelo simulador.
+`SECURITY DEFINER` — grava pedido + itens atomicamente, resolve `product_id` por nome quando não vem UUID, dá baixa no estoque (registrando `SALE_DEDUCTION` em `stock_movements`) e evita duplicidade por `external_id`. Usada tanto pelo webhook quanto pelo simulador e pelo PDV. Grava a `payment_method` quando enviada e define o status inicial como `READY` (pronto) quando nenhum item exige preparo; caso contrário `PENDING`. O motivo no extrato diferencia "Venda no PDV" de "Venda Moderninha".
 
 ### Função: register_stock_movement(p_product_id, p_type, p_quantity, p_reason, p_notes, p_unit_cost, p_order_id)
 `SECURITY DEFINER` — movimenta o estoque de forma **atômica** (lock `FOR UPDATE`) e grava a linha no extrato. Entrada recalcula o **custo médio ponderado** quando vem o custo do lote. Liberada para `admin` e `attendant` (o custo/preço não são alterados aqui).
 
-### Função: update_product_settings(p_product_id, p_minimum_stock, p_unit_cost, p_price)
-`SECURITY DEFINER` — ajusta limite de alerta, custo e preço. Restrita a `admin`.
+### Função: update_product_settings(p_product_id, p_minimum_stock, p_unit_cost, p_price, p_requires_preparation)
+`SECURITY DEFINER` — ajusta limite de alerta, custo, preço e a flag "precisa de preparo". Restrita a `admin`.
+
+### Função: cancel_order(p_order_id uuid)
+`SECURITY DEFINER` — cancela um pedido ainda em `PENDING` / `PREPARING` / `READY`, devolve atomicamente ao estoque a quantidade de cada item (lock `FOR UPDATE`) e registra `ORDER_CANCELLATION` no extrato. Liberada para `admin`, `attendant` e `service_role`.
+
+### Função: create_product(p_payload jsonb)
+`SECURITY DEFINER` — cadastra um produto novo (nome, categoria, unidade, saldo inicial, custo, preço, mínimo e "precisa de preparo"). Quando o saldo inicial é maior que zero, grava a entrada inicial no extrato. Restrita a `admin`.
 
 ### Realtime
 Publicação `supabase_realtime` habilitada em `products`, `stock_movements`, `orders` e `order_items`.

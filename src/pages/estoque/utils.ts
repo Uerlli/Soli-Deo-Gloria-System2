@@ -44,6 +44,12 @@ export const MOVEMENT_META: Record<StockMovementType, MovementMeta> = {
     tag: "bg-background-200 text-foreground-700",
     direction: "out",
   },
+  ORDER_CANCELLATION: {
+    label: "Cancelamento",
+    icon: "ri-arrow-go-back-line",
+    tag: "bg-secondary-100 text-secondary-900",
+    direction: "in",
+  },
 };
 
 /** Motivos de descarte disponíveis no modal de perdas. */
