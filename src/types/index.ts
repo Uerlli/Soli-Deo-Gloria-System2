@@ -44,6 +44,12 @@ export interface OrderItem {
   quantity: number;
   unit_price: number;
   notes: string | null;
+  /** Item já entregue ao cliente (usado para os itens de entrega imediata). */
+  delivered: boolean;
+  /** Item cancelado individualmente dentro do pedido. */
+  cancelled: boolean;
+  /** true = passa pela fila de preparo; false = entrega imediata no caixa. */
+  requires_preparation: boolean;
   created_at: string;
 }
 
@@ -58,6 +64,8 @@ export interface Order {
   notes: string | null;
   source: string;
   payment_method: PaymentMethod | null;
+  /** true = pedido pertence a uma comanda que acumula rodadas. */
+  create_comanda: boolean;
   created_at: string;
   updated_at: string;
   items: OrderItem[];
@@ -83,5 +91,6 @@ export interface OrderIngestPayload {
   notes?: string | null;
   source?: string;
   payment_method?: PaymentMethod | null;
+  create_comanda?: boolean;
   items: OrderIngestItem[];
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCatalog, getStockStatus } from "@/hooks/useCatalog";
 import { supabase } from "@/lib/supabase";
+import { findSimilarNames } from "@/lib/text";
 import type { OrderIngestPayload } from "@/types";
 
 const currency = new Intl.NumberFormat("pt-BR", {
@@ -71,8 +72,9 @@ export default function OrderComposer({
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("Todos");
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [tableIdentifier, setTableIdentifier] = useState("Mesa 01");
   const [customerName, setCustomerName] = useState("");
+  const [createComanda, setCreateComanda] = useState(false);
+  const [openComandas, setOpenComandas] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -102,6 +104,37 @@ export default function OrderComposer({
       setFormError(null);
     }
   }, [open]);
+
+  // Comandas abertas (pedidos marcados como comanda e ainda em andamento).
+  useEffect(() => {
+    if (!open) return undefined;
+    let active = true;
+    supabase
+      .from("orders")
+      .select("customer_name")
+      .eq("create_comanda", true)
+      .in("status", ["PENDING", "PREPARING", "READY"])
+      .not("customer_name", "is", null)
+      .then(({ data }) => {
+        if (!active) return;
+        const names = Array.from(
+          new Set(
+            ((data ?? []) as { customer_name: string | null }[])
+              .map((row) => (row.customer_name ?? "").trim())
+              .filter(Boolean)
+          )
+        );
+        setOpenComandas(names);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open]);
+
+  const suggestions = useMemo(
+    () => (createComanda ? findSimilarNames(customerName, openComandas) : []),
+    [createComanda, customerName, openComandas]
+  );
 
   useEffect(() => {
     if (!open) return undefined;
@@ -160,8 +193,8 @@ export default function OrderComposer({
   const reset = () => {
     setCart([]);
     setCustomerName("");
+    setCreateComanda(false);
     setNotes("");
-    setTableIdentifier("Mesa 01");
     setFormError(null);
   };
 
@@ -171,17 +204,22 @@ export default function OrderComposer({
       return;
     }
 
+    if (!customerName.trim()) {
+      setFormError("Informe o nome do cliente para finalizar o pedido.");
+      return;
+    }
+
     setSubmitting(true);
     setFormError(null);
 
     const payload: OrderIngestPayload = {
       external_id: `${source.toUpperCase()}-${Date.now()}`,
       order_number: String(Math.floor(100 + Math.random() * 900)),
-      table_identifier: tableIdentifier.trim() || null,
-      customer_name: customerName.trim() || null,
+      customer_name: customerName.trim(),
       notes: notes.trim() || null,
       total_amount: Number(total.toFixed(2)),
       source,
+      create_comanda: createComanda,
       items: cart.map((line) => ({
         product_id: line.productId,
         product_name: line.name,
@@ -347,32 +385,71 @@ export default function OrderComposer({
 
           <section className="flex min-h-0 flex-col">
             <div className="space-y-3 px-5 py-4">
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="font-label text-[10px] uppercase tracking-wider text-foreground-500">
-                    Mesa / Comanda
+              <label className="block">
+                <span className="font-label text-[10px] uppercase tracking-wider text-foreground-500">
+                  Cliente <span className="text-primary-600">*</span>
+                </span>
+                <input
+                  type="text"
+                  value={customerName}
+                  onChange={(event) => {
+                    setCustomerName(event.target.value);
+                    setFormError(null);
+                  }}
+                  placeholder="Nome do cliente"
+                  className="mt-1 h-10 w-full rounded-md border border-background-300 bg-background-50 px-3 text-sm text-foreground-950 outline-none transition-colors placeholder:text-foreground-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-200"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={() => setCreateComanda((value) => !value)}
+                className="flex w-full cursor-pointer items-center justify-between rounded-md border border-background-300 bg-background-50 px-3 py-2.5 text-left transition-colors hover:bg-background-100"
+              >
+                <span>
+                  <span className="block text-sm font-medium text-foreground-900">
+                    Criar comanda
                   </span>
-                  <input
-                    type="text"
-                    value={tableIdentifier}
-                    onChange={(event) => setTableIdentifier(event.target.value)}
-                    placeholder="Mesa 04"
-                    className="mt-1 h-10 w-full rounded-md border border-background-300 bg-background-50 px-3 text-sm text-foreground-950 outline-none transition-colors placeholder:text-foreground-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-200"
-                  />
-                </label>
-                <label className="block">
-                  <span className="font-label text-[10px] uppercase tracking-wider text-foreground-500">
-                    Cliente (opcional)
+                  <span className="block text-[11px] text-foreground-500">
+                    Abre uma conta que acumula outras rodadas. Desmarcado = venda avulsa, fechada na hora.
                   </span>
-                  <input
-                    type="text"
-                    value={customerName}
-                    onChange={(event) => setCustomerName(event.target.value)}
-                    placeholder="Nome"
-                    className="mt-1 h-10 w-full rounded-md border border-background-300 bg-background-50 px-3 text-sm text-foreground-950 outline-none transition-colors placeholder:text-foreground-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-200"
+                </span>
+                <span
+                  className={[
+                    "flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
+                    createComanda ? "bg-primary-500" : "bg-background-300",
+                  ].join(" ")}
+                >
+                  <span
+                    className={[
+                      "h-5 w-5 rounded-full bg-background-50 transition-transform",
+                      createComanda ? "translate-x-5" : "translate-x-0",
+                    ].join(" ")}
                   />
-                </label>
-              </div>
+                </span>
+              </button>
+
+              {suggestions.length > 0 && (
+                <div className="rounded-md border border-accent-200 bg-accent-50 px-3 py-2.5">
+                  <p className="flex items-center gap-1.5 text-[11px] font-medium text-accent-900">
+                    <i className="ri-user-search-line text-sm" />
+                    Já existe comanda aberta com nome parecido. Deseja juntar?
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {suggestions.map((name) => (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => setCustomerName(name)}
+                        className="flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-full border border-accent-300 bg-background-50 px-2.5 py-1 text-xs font-medium text-accent-900 transition-colors hover:bg-accent-100"
+                      >
+                        <i className="ri-add-circle-line text-sm" />
+                        {name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto border-t border-background-200/70 px-5 py-4 scroll-thin">

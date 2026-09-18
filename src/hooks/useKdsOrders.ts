@@ -11,7 +11,7 @@ export const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
 export type KdsConnection = "connecting" | "live" | "reconnecting";
 
 const ORDER_SELECT =
-  "id, external_id, order_number, table_identifier, customer_name, status, total_amount, notes, source, payment_method, created_at, updated_at, items:order_items(id, order_id, product_id, product_name, quantity, unit_price, notes, created_at)";
+  "id, external_id, order_number, table_identifier, customer_name, status, total_amount, notes, source, payment_method, create_comanda, created_at, updated_at, items:order_items(id, order_id, product_id, product_name, quantity, unit_price, notes, delivered, cancelled, requires_preparation, created_at)";
 
 interface UseKdsOrdersResult {
   orders: Order[];
@@ -28,6 +28,14 @@ interface UseKdsOrdersResult {
     paymentMethod?: PaymentMethod | null
   ) => Promise<{ error: string | null }>;
   cancelOrder: (orderId: string) => Promise<{ error: string | null }>;
+  cancelOrderItem: (
+    orderId: string,
+    itemId: string
+  ) => Promise<{ error: string | null }>;
+  setItemDelivered: (
+    itemId: string,
+    delivered: boolean
+  ) => Promise<{ error: string | null }>;
   finalizeOrders: (
     orderIds: string[],
     paymentMethod: PaymentMethod
@@ -230,6 +238,71 @@ export function useKdsOrders(): UseKdsOrdersResult {
     [orders, refresh]
   );
 
+  const cancelOrderItem = useCallback(
+    async (orderId: string, itemId: string) => {
+      try {
+        const { data, error: rpcError } = await supabase.rpc("cancel_order_item", {
+          p_order_id: orderId,
+          p_item_id: itemId,
+        });
+
+        if (rpcError) {
+          if (rpcError.message?.includes("already delivered")) {
+            return { error: "Este item já foi entregue e não volta ao estoque." };
+          }
+          if (rpcError.message?.includes("cannot be cancelled")) {
+            return { error: "Este pedido não pode mais ser alterado." };
+          }
+          if (rpcError.message?.includes("not authorized")) {
+            return { error: "Sua sessão não tem permissão para cancelar itens." };
+          }
+          return { error: "Não foi possível cancelar o item." };
+        }
+
+        const newStatus = (data as { order_status?: string } | null)?.order_status;
+        if (newStatus === "CANCELLED" || newStatus === "DELIVERED") {
+          setOrders((prev) => prev.filter((order) => order.id !== orderId));
+        }
+        void refresh();
+        return { error: null };
+      } catch {
+        return { error: "Não foi possível cancelar o item." };
+      }
+    },
+    [refresh]
+  );
+
+  const setItemDelivered = useCallback(
+    async (itemId: string, delivered: boolean) => {
+      const snapshot = orders;
+      setOrders((prev) =>
+        prev.map((order) => ({
+          ...order,
+          items: (order.items ?? []).map((item) =>
+            item.id === itemId ? { ...item, delivered } : item
+          ),
+        }))
+      );
+
+      try {
+        const { error: rpcError } = await supabase.rpc("set_order_item_delivered", {
+          p_item_id: itemId,
+          p_delivered: delivered,
+        });
+
+        if (rpcError) {
+          setOrders(snapshot);
+          return { error: "Não foi possível atualizar o item." };
+        }
+        return { error: null };
+      } catch {
+        setOrders(snapshot);
+        return { error: "Não foi possível atualizar o item." };
+      }
+    },
+    [orders]
+  );
+
   const finalizeOrders = useCallback(
     async (orderIds: string[], paymentMethod: PaymentMethod) => {
       if (orderIds.length === 0) {
@@ -274,6 +347,8 @@ export function useKdsOrders(): UseKdsOrdersResult {
     refetch: refresh,
     updateOrderStatus,
     cancelOrder,
+    cancelOrderItem,
+    setItemDelivered,
     finalizeOrders,
   };
 }

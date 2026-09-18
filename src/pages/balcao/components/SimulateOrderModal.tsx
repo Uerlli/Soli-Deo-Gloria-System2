@@ -21,7 +21,7 @@ export default function SimulateOrderModal({
       source="simulator"
       eyebrow="Ferramenta de teste"
       title="Simular venda da Moderninha Smart 2"
-      subtitle="Monte uma comanda como a maquininha enviaria e veja o balcão reagir ao vivo."
+      subtitle="Ferramenta de teste: monte uma comanda como a maquininha enviaria e veja o balcão reagir ao vivo. Nada aqui vira venda real."
       submitLabel="Disparar simulação"
       showStock
       onClose={onClose}

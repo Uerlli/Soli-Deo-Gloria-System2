@@ -113,7 +113,7 @@ export default function ComandasPage() {
                   <i className={`${connectionMeta.icon} text-sm`} />
                   {connectionMeta.label}
                 </span>
-                Pedidos agrupados por mesa, com total acumulado
+                Pedidos agrupados por cliente, com total acumulado
               </p>
             </div>
           </div>
@@ -168,7 +168,8 @@ export default function ComandasPage() {
               Nenhuma comanda aberta
             </p>
             <p className="text-sm text-foreground-500">
-              Assim que um pedido for lançado no PDV ou pela Moderninha, a mesa aparece aqui.
+              Assim que um pedido marcado com “Criar comanda” for lançado no PDV ou pela
+              Moderninha, o cliente aparece aqui.
             </p>
           </div>
         )}
@@ -184,8 +185,9 @@ export default function ComandasPage() {
         <p className="mt-8 flex items-start gap-2 text-xs text-foreground-500">
           <i className="ri-information-line mt-0.5 text-base" />
           <span>
-            Várias rodadas da mesma mesa entram na mesma comanda e o total é somado. Ao
-            finalizar, escolha a forma de pagamento para fechar o caixa do dia.
+            Só aparecem aqui os pedidos marcados com “Criar comanda”. Várias rodadas do mesmo
+            cliente entram na mesma conta e o total é somado. Ao finalizar, escolha a forma de
+            pagamento para fechar o caixa do dia.
           </span>
         </p>
       </div>

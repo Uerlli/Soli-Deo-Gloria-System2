@@ -51,7 +51,7 @@ export default function RestockModal({
   const [newCost, setNewCost] = useState("");
   const [newPrice, setNewPrice] = useState("");
   const [newMinimum, setNewMinimum] = useState("");
-  const [newRequiresPrep, setNewRequiresPrep] = useState(true);
+  const [newImmediate, setNewImmediate] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -77,7 +77,7 @@ export default function RestockModal({
     setNewCost("");
     setNewPrice("");
     setNewMinimum("");
-    setNewRequiresPrep(true);
+    setNewImmediate(false);
     setFormError(null);
   }, [open, productId]);
 
@@ -180,7 +180,7 @@ export default function RestockModal({
       unitCost: cost,
       price: salePrice,
       minimumStock: minimum,
-      requiresPreparation: newRequiresPrep,
+      requiresPreparation: !newImmediate,
     });
     setSubmitting(false);
 
@@ -494,27 +494,28 @@ export default function RestockModal({
 
           <button
             type="button"
-            onClick={() => setNewRequiresPrep((value) => !value)}
+            onClick={() => setNewImmediate((value) => !value)}
             className="flex w-full cursor-pointer items-center justify-between rounded-md border border-background-300 bg-background-50 px-3 py-2.5 text-left transition-colors hover:bg-background-100"
           >
             <span>
               <span className="block text-sm font-medium text-foreground-900">
-                Precisa de preparo
+                Entrega imediata no caixa
               </span>
               <span className="block text-[11px] text-foreground-500">
-                Itens sem preparo já entram como “Prontos para entrega”.
+                Marcado (sim): pode ser entregue na hora. Desmarcado (não): entra na fila de
+                preparo do Balcão.
               </span>
             </span>
             <span
               className={[
                 "flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
-                newRequiresPrep ? "bg-primary-500" : "bg-background-300",
+                newImmediate ? "bg-primary-500" : "bg-background-300",
               ].join(" ")}
             >
               <span
                 className={[
                   "h-5 w-5 rounded-full bg-background-50 transition-transform",
-                  newRequiresPrep ? "translate-x-5" : "translate-x-0",
+                  newImmediate ? "translate-x-5" : "translate-x-0",
                 ].join(" ")}
               />
             </span>

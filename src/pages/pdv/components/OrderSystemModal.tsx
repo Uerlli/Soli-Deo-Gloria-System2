@@ -23,7 +23,7 @@ export default function OrderSystemModal({
       source="pdv"
       eyebrow="Venda no balcão"
       title="Sistema de Pedidos"
-      subtitle="Monte o pedido, informe a mesa e envie para o preparo. Registrado como venda real."
+      subtitle="Monte o pedido, informe o cliente e envie para o preparo. Registrado como venda real."
       submitLabel="Lançar pedido"
       seed={seed}
       onClose={onClose}

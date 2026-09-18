@@ -4,6 +4,7 @@ import SimulateOrderModal from "@/pages/balcao/components/SimulateOrderModal";
 import PaymentPromptModal from "@/pages/balcao/components/PaymentPromptModal";
 import { useKdsOrders, type KdsConnection } from "@/hooks/useKdsOrders";
 import { useKitchenSound } from "@/hooks/useKitchenSound";
+import { useAuth } from "@/contexts/AuthContext";
 import { STATUS_META } from "@/pages/balcao/utils";
 import type { Order, OrderStatus, PaymentMethod } from "@/types";
 
@@ -57,6 +58,7 @@ const CONNECTION_META: Record<
 };
 
 export default function BalcaoPage() {
+  const { isAdmin } = useAuth();
   const {
     orders,
     loading,
@@ -67,6 +69,8 @@ export default function BalcaoPage() {
     refetch,
     updateOrderStatus,
     cancelOrder,
+    cancelOrderItem,
+    setItemDelivered,
   } = useKdsOrders();
 
   const { enabled, enable, disable, playChime } = useKitchenSound();
@@ -171,6 +175,24 @@ export default function BalcaoPage() {
     );
   };
 
+  const handleCancelItem = async (order: Order, itemId: string) => {
+    setBusyId(order.id);
+    const { error: cancelError } = await cancelOrderItem(order.id, itemId);
+    setBusyId(null);
+    setToast(
+      cancelError
+        ? { text: cancelError, tone: "error" }
+        : { text: "Item cancelado e devolvido ao estoque.", tone: "success" }
+    );
+  };
+
+  const handleToggleDelivered = async (itemId: string, delivered: boolean) => {
+    const { error: deliverError } = await setItemDelivered(itemId, delivered);
+    if (deliverError) {
+      setToast({ text: deliverError, tone: "error" });
+    }
+  };
+
   const toggleSound = () => {
     if (enabled) {
       disable();
@@ -227,14 +249,19 @@ export default function BalcaoPage() {
               {enabled ? "Som ativado" : "Ativar som"}
             </button>
 
-            <button
-              type="button"
-              onClick={() => setSimulateOpen(true)}
-              className="flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-md bg-primary-500 px-4 py-2.5 text-sm font-medium text-background-50 transition-colors hover:bg-primary-600"
-            >
-              <i className="ri-smartphone-line text-lg" />
-              Simular pedido da maquininha
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setSimulateOpen(true)}
+                className="flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-md border border-accent-300 bg-accent-50 px-4 py-2.5 text-sm font-medium text-accent-900 transition-colors hover:bg-accent-100"
+              >
+                <i className="ri-flask-line text-lg" />
+                Simular pedido da maquininha
+                <span className="rounded-full bg-accent-200 px-2 py-0.5 font-label text-[9px] uppercase tracking-wider text-accent-900">
+                  teste
+                </span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -328,6 +355,10 @@ export default function BalcaoPage() {
                       busy={busyId === order.id}
                       onAdvance={(target) => void handleAdvance(target)}
                       onCancel={(target) => void handleCancel(target)}
+                      onCancelItem={(target, itemId) => void handleCancelItem(target, itemId)}
+                      onToggleDelivered={(itemId, delivered) =>
+                        void handleToggleDelivered(itemId, delivered)
+                      }
                     />
                   ))}
                 </div>
@@ -340,8 +371,8 @@ export default function BalcaoPage() {
           <i className="ri-information-line mt-0.5 text-base" />
           <span>
             A fila é alimentada automaticamente quando a Moderninha Smart 2 finaliza uma
-            conta. Use “Simular pedido da maquininha” para testar todos os fluxos sem
-            precisar do equipamento.
+            conta. Pedidos com apenas itens de entrega imediata já entram em “Prontos para
+            entrega”. Itens com botão “Entregue” podem ser liberados direto no caixa.
           </span>
         </p>
       </div>

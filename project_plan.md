@@ -10,10 +10,10 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 ## 2. Page Structure
 
 - `/login` — Tela de login (identidade da marca + formulário)
-- `/pdv` — Ponto de Venda (catálogo + carrinho + pagamento)
+- `/pdv` — Ponto de Venda (catálogo + "Sistema de Pedidos" + pagamento)
 - `/balcao` — Balcão de Preparo / KDS (fila de pedidos em tempo real vinda da Moderninha Smart 2)
 - `/estoque` — Gestão de Estoque & Insumos (KPIs, tabela, entradas, perdas, extrato)
-- `/comandas` — Comandas (pedidos agrupados por mesa, total acumulado e finalização com pagamento)
+- `/comandas` — Comandas (pedidos marcados como comanda, agrupados por cliente, total acumulado e finalização com pagamento)
 - `/vendas` — Histórico de vendas (somente Admin para financeiro)
 - `/relatorios` — Relatórios (somente Admin)
 - `/usuarios` — Gestão de usuários (somente Admin)
@@ -53,8 +53,13 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 - [x] Forma de pagamento (Dinheiro / Pix / Cartão) na finalização do pedido
 - [x] Cancelamento de pedido (hover no desktop, sempre visível no mobile/tablet) com devolução de estoque
 - [x] Estoque: cadastro de produto novo dentro do modal de entrada de mercadoria (ícone "+", admin)
-- [x] Produtos: flag "precisa de preparo" (itens sem preparo já entram como "Prontos para entrega")
-- [x] Comandas: agrupamento por mesa, total acumulado por rodadas e finalização com pagamento
+- [x] Produtos: flag "entrega imediata no caixa" (só Água, Água com gás, Refri lata, Schweppes e Kombucha; os demais entram na fila)
+- [x] Comandas: agrupamento por cliente, total acumulado por rodadas e finalização com pagamento
+- [x] Pedido: campo Cliente obrigatório + opção "Criar comanda" com sugestão de comanda aberta por nome parecido
+- [x] Balcão: itens de "entrega imediata" com botão "Entregue" (não afetam a coluna do bloco)
+- [x] Balcão: pedido só com itens de entrega imediata nasce em "Prontos para entrega"
+- [x] Balcão: cancelamento de item individual devolvendo estoque (nunca o que já foi entregue) e encerramento automático quando só sobram itens entregues
+- [x] Simulador da maquininha restrito ao administrador, com selo de teste
 
 ## 4. Data Model Design
 
@@ -82,7 +87,7 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 | unit_cost | numeric | Custo unitário |
 | price | numeric | Preço de venda |
 | active | boolean | Produto ativo |
-| requires_preparation | boolean | Se false, o item já entra como "Pronto para entrega" |
+| requires_preparation | boolean | Flag técnica de fila. `false` = "entrega imediata no caixa" (não passa pela fila); `true` = passa pela fila de preparo do Balcão |
 | created_at | timestamptz | Criado em |
 | updated_at | timestamptz | Atualizado em |
 
@@ -140,13 +145,14 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 | id | uuid | PK |
 | external_id | text | Código da transação vindo do PagBank (idempotência) |
 | order_number | text | Número da comanda/ficha |
-| table_identifier | text | Mesa / identificação do atendimento |
-| customer_name | text | Nome do cliente (opcional) |
+| table_identifier | text | Legado (mesa/identificação) — não é mais usado pelo formulário atual |
+| customer_name | text | Nome do cliente (obrigatório no formulário atual) |
 | status | order_status (enum) | `PENDING` / `PREPARING` / `READY` / `DELIVERED` / `CANCELLED` |
 | total_amount | numeric(12,2) | Valor total |
 | notes | text | Observações gerais do pedido |
 | source | text | Origem (`pagbank` / `pdv` / `simulator`) |
 | payment_method | text | `cash` / `pix` / `card` (definido na entrega/finalização) |
+| create_comanda | boolean | `true` = pedido pertence a uma comanda que acumula rodadas |
 | created_at | timestamptz | Recebido em |
 | updated_at | timestamptz | Atualizado em |
 
@@ -160,9 +166,12 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 | quantity | integer | Quantidade |
 | unit_price | numeric(12,2) | Preço unitário |
 | notes | text | Observação/customização do item |
+| requires_preparation | boolean | Snapshot no momento do pedido: `false` = entrega imediata no caixa |
+| delivered | boolean | Item já entregue ao cliente (não devolve estoque ao cancelar) |
+| cancelled | boolean | Item cancelado individualmente dentro do pedido |
 
 ### Função: ingest_order(p_payload jsonb)
-`SECURITY DEFINER` — grava pedido + itens atomicamente, resolve `product_id` por nome quando não vem UUID, dá baixa no estoque (registrando `SALE_DEDUCTION` em `stock_movements`) e evita duplicidade por `external_id`. Usada tanto pelo webhook quanto pelo simulador e pelo PDV. Grava a `payment_method` quando enviada e define o status inicial como `READY` (pronto) quando nenhum item exige preparo; caso contrário `PENDING`. O motivo no extrato diferencia "Venda no PDV" de "Venda Moderninha".
+`SECURITY DEFINER` — grava pedido + itens atomicamente, resolve `product_id` por nome quando não vem UUID, dá baixa no estoque (registrando `SALE_DEDUCTION` em `stock_movements`) e evita duplicidade por `external_id`. Usada tanto pelo webhook quanto pelo simulador e pelo PDV. Grava `payment_method` e `create_comanda` quando enviados. Define o status inicial como `READY` (pronto) quando nenhum item exige preparo; caso contrário `PENDING`. Grava o snapshot de `requires_preparation` por item. O motivo no extrato diferencia "Venda no PDV", "Venda Moderninha" e "Venda simulada (teste)".
 
 ### Função: register_stock_movement(p_product_id, p_type, p_quantity, p_reason, p_notes, p_unit_cost, p_order_id)
 `SECURITY DEFINER` — movimenta o estoque de forma **atômica** (lock `FOR UPDATE`) e grava a linha no extrato. Entrada recalcula o **custo médio ponderado** quando vem o custo do lote. Liberada para `admin` e `attendant` (o custo/preço não são alterados aqui).
@@ -171,7 +180,13 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 `SECURITY DEFINER` — ajusta limite de alerta, custo, preço e a flag "precisa de preparo". Restrita a `admin`.
 
 ### Função: cancel_order(p_order_id uuid)
-`SECURITY DEFINER` — cancela um pedido ainda em `PENDING` / `PREPARING` / `READY`, devolve atomicamente ao estoque a quantidade de cada item (lock `FOR UPDATE`) e registra `ORDER_CANCELLATION` no extrato. Liberada para `admin`, `attendant` e `service_role`.
+`SECURITY DEFINER` — cancela um pedido ainda em `PENDING` / `PREPARING` / `READY`, devolve atomicamente ao estoque a quantidade de cada item **ainda não entregue** (lock `FOR UPDATE`), marca os itens como cancelados e registra `ORDER_CANCELLATION` no extrato. Liberada para `admin`, `attendant` e `service_role`.
+
+### Função: cancel_order_item(p_order_id uuid, p_item_id uuid)
+`SECURITY DEFINER` — cancela um item individual ainda não entregue, devolvendo a quantidade ao estoque (`ORDER_CANCELLATION`, motivo "Cancelamento de item"). Nunca devolve itens já marcados como entregues. Recalcula o estado do pedido: se não sobrar item ativo → `CANCELLED`; se só sobrarem itens entregues → `DELIVERED` (sai do quadro ativo do Balcão); senão mantém. Liberada para `admin`, `attendant` e `service_role`.
+
+### Função: set_order_item_delivered(p_item_id uuid, p_delivered boolean)
+`SECURITY DEFINER` — marca/desmarca um item como entregue ao cliente (usado pelos itens de entrega imediata no Balcão). Não altera a coluna do pedido. Liberada para `admin`, `attendant` e `service_role`.
 
 ### Função: create_product(p_payload jsonb)
 `SECURITY DEFINER` — cadastra um produto novo (nome, categoria, unidade, saldo inicial, custo, preço, mínimo e "precisa de preparo"). Quando o saldo inicial é maior que zero, grava a entrada inicial no extrato. Restrita a `admin`.
@@ -212,3 +227,13 @@ Publicação `supabase_realtime` habilitada em `products`, `stock_movements`, `o
 - Deliverable: Tela `/estoque` completa com módulos de restock, perda/ajuste, configuração de produto e gaveta de extrato.
 - Banco: tabela `stock_movements` + enum `stock_movement_type`, RLS por papel, Realtime habilitado, RPCs `register_stock_movement` e `update_product_settings`, `ingest_order` registrando `SALE_DEDUCTION`.
 - Permissões: movimentação de saldo (entrada/perda/ajuste) liberada para admin e atendente via RPC controlada; custo, preço e mínimo restritos ao admin; coluna de custo oculta para o atendente.
+
+### Phase 7: Pedidos, Comandas e Entrega Imediata no Balcão
+- Goal: Consolidar a tela de pedidos (Sistema de Pedidos do PDV + simulador de teste) e refinar o comportamento do Balcão (KDS) conforme o conteúdo de cada pedido.
+- Deliverable:
+  - Formulário: campo **Cliente obrigatório** e opção **Criar comanda** com sugestão de comanda aberta por nome parecido (ignora acentos e maiúsculas).
+  - Produtos: flag renomeada para **"Entrega imediata no caixa"** (apenas Água, Água com gás, Refri lata, Schweppes e Kombucha marcados como sim).
+  - Balcão: pedido com item de fila vira um bloco único decidido só pelos itens de fila; itens de entrega imediata ganham botão "Entregue" (não afetam a coluna); pedido só com itens imediatos nasce em "Prontos para entrega".
+  - Cancelamento de item individual com devolução de estoque (nunca do entregue) e encerramento automático do bloco quando só restam itens entregues.
+  - Simulador da maquininha liberado só para administrador, com indicação clara de teste.
+- Banco: colunas `orders.create_comanda` e `order_items.requires_preparation/delivered/cancelled`; funções `cancel_order_item` e `set_order_item_delivered`; `ingest_order` e `cancel_order` revisadas.

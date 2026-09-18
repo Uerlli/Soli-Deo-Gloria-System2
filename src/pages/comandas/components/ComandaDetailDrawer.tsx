@@ -102,17 +102,28 @@ export default function ComandaDetailDrawer({
                 </div>
 
                 <ul className="mt-2.5 space-y-1.5">
-                  {(order.items ?? []).map((item) => (
-                    <li key={item.id} className="flex items-start gap-2 text-sm">
-                      <span className="numeric shrink-0 rounded bg-primary-100 px-1.5 text-xs font-bold leading-5 text-primary-700">
-                        {item.quantity}x
-                      </span>
-                      <span className="flex-1 text-foreground-800">{item.product_name}</span>
-                      <span className="numeric text-xs text-foreground-500">
-                        {currency.format(Number(item.unit_price) * item.quantity)}
-                      </span>
-                    </li>
-                  ))}
+                  {(order.items ?? [])
+                    .filter((item) => !item.cancelled)
+                    .map((item) => (
+                      <li key={item.id} className="flex items-start gap-2 text-sm">
+                        <span className="numeric shrink-0 rounded bg-primary-100 px-1.5 text-xs font-bold leading-5 text-primary-700">
+                          {item.quantity}x
+                        </span>
+                        <span
+                          className={[
+                            "flex-1",
+                            item.delivered
+                              ? "text-foreground-400 line-through"
+                              : "text-foreground-800",
+                          ].join(" ")}
+                        >
+                          {item.product_name}
+                        </span>
+                        <span className="numeric text-xs text-foreground-500">
+                          {currency.format(Number(item.unit_price) * item.quantity)}
+                        </span>
+                      </li>
+                    ))}
                 </ul>
 
                 <div className="mt-2.5 flex items-center justify-between border-t border-background-200/70 pt-2.5">

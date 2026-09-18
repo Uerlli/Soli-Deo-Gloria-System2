@@ -32,9 +32,8 @@ export default function PaymentPromptModal({
   if (!open || !order) return null;
 
   const identifier =
-    order.table_identifier?.trim() ||
-    (order.order_number ? `Comanda ${order.order_number}` : null) ||
-    order.customer_name ||
+    order.customer_name?.trim() ||
+    (order.order_number ? `Pedido ${order.order_number}` : null) ||
     "Pedido";
 
   return (
