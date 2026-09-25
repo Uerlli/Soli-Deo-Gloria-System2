@@ -8,6 +8,8 @@ interface ComandaDetailDrawerProps {
   comanda: Comanda | null;
   busy: boolean;
   onClose: () => void;
+  /** Abre o carrinho de montagem de pedido já vinculado a esta comanda. */
+  onAddOrder: () => void;
   onFinalize: (method: PaymentMethod) => void;
   onCancelComanda: () => void;
 }
@@ -23,6 +25,7 @@ export default function ComandaDetailDrawer({
   comanda,
   busy,
   onClose,
+  onAddOrder,
   onFinalize,
   onCancelComanda,
 }: ComandaDetailDrawerProps) {
@@ -57,14 +60,30 @@ export default function ComandaDetailDrawer({
 
       <aside className="relative flex h-full w-full max-w-xl flex-col animate-slide-left border-l border-background-300/60 bg-background-50">
         <header className="flex items-start justify-between gap-3 border-b border-background-300/60 px-5 py-4">
-          <div className="flex items-start gap-3">
+          <div className="flex min-w-0 items-start gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-secondary-100 text-secondary-800">
               <i className="ri-restaurant-2-line text-xl" />
             </span>
-            <div>
-              <h2 className="font-heading text-lg font-medium leading-tight text-foreground-950">
-                {comanda.label}
-              </h2>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="truncate font-heading text-lg font-medium leading-tight text-foreground-950">
+                  {comanda.label}
+                </h2>
+                <button
+                  type="button"
+                  onClick={onAddOrder}
+                  title="Adicionar pedido a esta comanda"
+                  aria-label="Adicionar pedido a esta comanda"
+                  className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full bg-secondary-100 py-1 pl-1.5 pr-3 text-secondary-900 transition-colors hover:bg-secondary-200"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-secondary-500 text-background-50">
+                    <i className="ri-add-line text-sm" />
+                  </span>
+                  <span className="font-label text-[10px] uppercase tracking-wider">
+                    Adicionar
+                  </span>
+                </button>
+              </div>
               <p className="mt-0.5 text-xs text-foreground-500">
                 {comanda.orders.length} pedido{comanda.orders.length === 1 ? "" : "s"} ·{" "}
                 {comanda.itemCount} item{comanda.itemCount === 1 ? "" : "s"}

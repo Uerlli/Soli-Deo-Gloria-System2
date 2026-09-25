@@ -6,8 +6,10 @@ import type { InventoryProduct, ProductSettingsInput } from "@/types/inventory";
 interface StockSettingsModalProps {
   open: boolean;
   product: InventoryProduct | null;
+  isAdmin: boolean;
   onClose: () => void;
   onSubmit: (input: ProductSettingsInput) => Promise<{ error: string | null }>;
+  onDelete: () => Promise<{ error: string | null }>;
 }
 
 function toNumber(value: string): number {
@@ -17,14 +19,18 @@ function toNumber(value: string): number {
 export default function StockSettingsModal({
   open,
   product,
+  isAdmin,
   onClose,
   onSubmit,
+  onDelete,
 }: StockSettingsModalProps) {
   const [minimumStock, setMinimumStock] = useState("");
   const [unitCost, setUnitCost] = useState("");
   const [price, setPrice] = useState("");
   const [immediate, setImmediate] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const productRef = useRef(product);
@@ -41,6 +47,8 @@ export default function StockSettingsModal({
     setPrice(String(Number(current.price)));
     setImmediate(!current.requires_preparation);
     setFormError(null);
+    setConfirmingDelete(false);
+    setDeleting(false);
   }, [open, product?.id]);
 
   if (!product) return null;
@@ -74,6 +82,18 @@ export default function StockSettingsModal({
     });
     setSubmitting(false);
 
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    onClose();
+  };
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    setFormError(null);
+    const { error } = await onDelete();
+    setDeleting(false);
     if (error) {
       setFormError(error);
       return;
@@ -202,6 +222,52 @@ export default function StockSettingsModal({
             />
           </span>
         </button>
+
+        {isAdmin && (
+          <div className="rounded-md border border-primary-200 bg-primary-50 px-3 py-3">
+            <p className="font-label text-[10px] uppercase tracking-wider text-primary-700">
+              Excluir do catálogo
+            </p>
+            <p className="mt-1 text-[11px] leading-snug text-foreground-600">
+              Esconde o produto do PDV e do Balcão sem apagar o histórico de pedidos
+              antigos que já o utilizam.
+            </p>
+            {confirmingDelete ? (
+              <div className="mt-2.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleDelete()}
+                  disabled={deleting}
+                  className="flex cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-md bg-primary-600 px-3 py-2 text-xs font-medium text-background-50 transition-colors hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {deleting ? (
+                    <i className="ri-loader-4-line animate-spin text-sm" />
+                  ) : (
+                    <i className="ri-delete-bin-6-line text-sm" />
+                  )}
+                  Confirmar exclusão
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={deleting}
+                  className="cursor-pointer whitespace-nowrap rounded-md border border-background-300 px-3 py-2 text-xs text-foreground-600 transition-colors hover:bg-background-100 disabled:opacity-50"
+                >
+                  Voltar
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                className="mt-2.5 flex cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md border border-primary-300 bg-background-50 px-3 py-2 text-xs font-medium text-primary-700 transition-colors hover:bg-primary-100"
+              >
+                <i className="ri-delete-bin-6-line text-sm" />
+                Excluir do catálogo
+              </button>
+            )}
+          </div>
+        )}
 
         {formError && (
           <p className="flex items-center gap-1.5 rounded-md bg-primary-50 px-3 py-2 text-xs text-primary-800">

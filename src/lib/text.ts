@@ -30,3 +30,30 @@ export function findSimilarNames(
   }
   return matches;
 }
+
+/**
+ * Nomes existentes que casam com o termo — incluindo nomes idênticos.
+ * Usado para bloquear o envio quando já existe uma comanda aberta com o
+ * mesmo nome (ou um nome parecido) e exigir uma escolha explícita.
+ */
+export function matchSimilarNames(
+  term: string,
+  existing: string[],
+  limit = 4
+): string[] {
+  const target = normalizeName(term);
+  if (!target) return [];
+  const matches: string[] = [];
+  for (const name of existing) {
+    const current = normalizeName(name);
+    if (!current) continue;
+    const exact = current === target;
+    const fuzzy =
+      target.length >= 2 && (current.includes(target) || target.includes(current));
+    if (exact || fuzzy) {
+      if (!matches.includes(name)) matches.push(name);
+    }
+    if (matches.length >= limit) break;
+  }
+  return matches;
+}

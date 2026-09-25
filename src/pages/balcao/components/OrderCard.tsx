@@ -43,6 +43,9 @@ export default function OrderCard({
   const allItems = order.items ?? [];
   const items = allItems.filter((item) => !item.cancelled);
   const cancelledCount = allItems.length - items.length;
+  // O botão individual "Entregue" só faz sentido em pedidos mistos (fila + imediato).
+  // Pedidos só de entrega imediata são concluídos pelo botão único "Entregar ao cliente".
+  const hasQueueItem = items.some((item) => item.requires_preparation !== false);
 
   return (
     <article
@@ -166,7 +169,7 @@ export default function OrderCard({
                   </div>
                 ) : (
                   <div className="mt-2 flex items-center justify-end gap-2">
-                    {isImmediate && (
+                    {isImmediate && hasQueueItem && (
                       <button
                         type="button"
                         onClick={() => onToggleDelivered(item.id, !item.delivered)}

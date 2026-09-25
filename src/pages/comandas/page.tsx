@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import ComandaCard from "@/pages/comandas/components/ComandaCard";
 import ComandaDetailDrawer from "@/pages/comandas/components/ComandaDetailDrawer";
 import { buildComandas, currency, type Comanda } from "@/pages/comandas/utils";
-import { useKdsOrders, type KdsConnection } from "@/hooks/useKdsOrders";
+import { useComandas } from "@/hooks/useComandas";
+import type { KdsConnection } from "@/hooks/useKdsOrders";
+import OrderComposer from "@/components/feature/OrderComposer";
 import type { PaymentMethod } from "@/types";
 
 const CONNECTION_META: Record<
@@ -28,9 +30,10 @@ const CONNECTION_META: Record<
 
 export default function ComandasPage() {
   const { orders, loading, error, connection, refetch, finalizeOrders, cancelOrder } =
-    useKdsOrders();
+    useComandas();
 
   const [selected, setSelected] = useState<Comanda | null>(null);
+  const [addOrderOpen, setAddOrderOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ text: string; tone: "success" | "error" } | null>(
     null
@@ -50,6 +53,13 @@ export default function ComandasPage() {
     const fresh = comandas.find((comanda) => comanda.key === selected.key) ?? null;
     setSelected(fresh);
   }, [comandas]);
+
+  // Se a comanda selecionada deixar de existir, fecha o carrinho de adição.
+  useEffect(() => {
+    if (!selected && addOrderOpen) {
+      setAddOrderOpen(false);
+    }
+  }, [selected, addOrderOpen]);
 
   const openTotal = useMemo(
     () => comandas.reduce((sum, comanda) => sum + comanda.total, 0),
@@ -197,8 +207,28 @@ export default function ComandasPage() {
         comanda={selected}
         busy={busy}
         onClose={() => setSelected(null)}
+        onAddOrder={() => setAddOrderOpen(true)}
         onFinalize={(method) => void handleFinalize(method)}
         onCancelComanda={() => void handleCancelComanda()}
+      />
+
+      <OrderComposer
+        open={addOrderOpen}
+        source="pdv"
+        eyebrow="Comanda aberta"
+        title="Adicionar pedido à comanda"
+        subtitle={
+          selected
+            ? `O novo pedido entra automaticamente na conta de ${selected.label}.`
+            : ""
+        }
+        submitLabel="Lançar na comanda"
+        submitIcon="ri-add-circle-line"
+        lockedComanda={
+          selected ? { id: selected.comandaId, name: selected.label } : null
+        }
+        onClose={() => setAddOrderOpen(false)}
+        onDispatched={(message) => setToast({ text: message, tone: "success" })}
       />
 
       {toast && (

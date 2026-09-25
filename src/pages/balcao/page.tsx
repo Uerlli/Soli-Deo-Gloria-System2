@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import OrderCard from "@/pages/balcao/components/OrderCard";
 import SimulateOrderModal from "@/pages/balcao/components/SimulateOrderModal";
-import PaymentPromptModal from "@/pages/balcao/components/PaymentPromptModal";
+import PaymentDrawer from "@/pages/balcao/components/PaymentDrawer";
 import { useKdsOrders, type KdsConnection } from "@/hooks/useKdsOrders";
 import { useKitchenSound } from "@/hooks/useKitchenSound";
 import { useAuth } from "@/contexts/AuthContext";
@@ -134,7 +134,20 @@ export default function BalcaoPage() {
   const handleAdvance = async (order: Order) => {
     const next = STATUS_META[order.status].next;
     if (!next) return;
-    // A entrega exige a forma de pagamento antes de concluir o pedido.
+    // Pedido dentro de uma comanda: não pergunta pagamento aqui — só marca como entregue.
+    // O pagamento é cobrado uma única vez ao fechar a comanda inteira (aba Comandas).
+    if (next === "DELIVERED" && order.create_comanda) {
+      setBusyId(order.id);
+      const { error: updateError } = await updateOrderStatus(order.id, "DELIVERED");
+      setBusyId(null);
+      if (updateError) {
+        setToast({ text: updateError, tone: "error" });
+      } else {
+        setToast({ text: "Pedido entregue.", tone: "success" });
+      }
+      return;
+    }
+    // Venda avulsa: exige a forma de pagamento antes de concluir (gaveta lateral).
     if (next === "DELIVERED") {
       setPaymentOrder(order);
       return;
@@ -383,7 +396,7 @@ export default function BalcaoPage() {
         onDispatched={(message) => setToast({ text: message, tone: "success" })}
       />
 
-      <PaymentPromptModal
+      <PaymentDrawer
         open={paymentOrder !== null}
         order={paymentOrder}
         busy={paymentBusy}

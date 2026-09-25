@@ -60,6 +60,14 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 - [x] Balcão: pedido só com itens de entrega imediata nasce em "Prontos para entrega"
 - [x] Balcão: cancelamento de item individual devolvendo estoque (nunca o que já foi entregue) e encerramento automático quando só sobram itens entregues
 - [x] Simulador da maquininha restrito ao administrador, com selo de teste
+- [x] Estoque: excluir produto do catálogo (soft delete via `active = false`, admin) preservando o histórico de pedidos antigos
+- [x] Pedido: aviso claro + sugestões de comanda aberta com nome parecido no campo Cliente (busca em tempo real, ignora acentos/caixa)
+- [x] Balcão: pedido só com itens de entrega imediata é concluído apenas pelo botão único "Entregar ao cliente" (sem botão "Entregue" individual)
+- [x] Balcão: pagamento de venda avulsa via gaveta lateral (Dinheiro/Pix/Cartão); pedido de comanda não pergunta pagamento na entrega — só ao fechar a comanda inteira
+- [x] Comandas: agrupamento por identificador próprio (`comanda_id`), permitindo contas separadas com o mesmo nome
+- [x] Comandas: entregar um pedido individual no Balcão não fecha a comanda — ela continua aberta (inclui pedidos já entregues) até o "Finalizar pedido"
+- [x] Pedido: envio bloqueado quando há comanda aberta com nome igual/parecido, até o atendente escolher "Juntar à conta" ou "criar conta nova"
+- [x] Comanda: atalho "+ Adicionar" no detalhe abre o carrinho já vinculado à comanda (sem campos de cliente/criar comanda)
 
 ## 4. Data Model Design
 
@@ -153,6 +161,7 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 | source | text | Origem (`pagbank` / `pdv` / `simulator`) |
 | payment_method | text | `cash` / `pix` / `card` (definido na entrega/finalização) |
 | create_comanda | boolean | `true` = pedido pertence a uma comanda que acumula rodadas |
+| comanda_id | uuid | Identificador próprio da comanda (permite contas separadas com o mesmo nome). Nulo em pedidos antigos, que caem no agrupamento por nome |
 | created_at | timestamptz | Recebido em |
 | updated_at | timestamptz | Atualizado em |
 
@@ -171,7 +180,7 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 | cancelled | boolean | Item cancelado individualmente dentro do pedido |
 
 ### Função: ingest_order(p_payload jsonb)
-`SECURITY DEFINER` — grava pedido + itens atomicamente, resolve `product_id` por nome quando não vem UUID, dá baixa no estoque (registrando `SALE_DEDUCTION` em `stock_movements`) e evita duplicidade por `external_id`. Usada tanto pelo webhook quanto pelo simulador e pelo PDV. Grava `payment_method` e `create_comanda` quando enviados. Define o status inicial como `READY` (pronto) quando nenhum item exige preparo; caso contrário `PENDING`. Grava o snapshot de `requires_preparation` por item. O motivo no extrato diferencia "Venda no PDV", "Venda Moderninha" e "Venda simulada (teste)".
+`SECURITY DEFINER` — grava pedido + itens atomicamente, resolve `product_id` por nome quando não vem UUID, dá baixa no estoque (registrando `SALE_DEDUCTION` em `stock_movements`) e evita duplicidade por `external_id`. Usada tanto pelo webhook quanto pelo simulador e pelo PDV. Grava `payment_method` e `create_comanda` quando enviados. Define o status inicial como `READY` (pronto) quando nenhum item exige preparo; caso contrário `PENDING`. Grava o snapshot de `requires_preparation` por item. O motivo no extrato diferencia "Venda no PDV", "Venda Moderninha" e "Venda simulada (teste)". Quando `comanda_id` vem no payload (UUID válido), o pedido é vinculado à comanda correspondente; caso contrário fica nulo.
 
 ### Função: register_stock_movement(p_product_id, p_type, p_quantity, p_reason, p_notes, p_unit_cost, p_order_id)
 `SECURITY DEFINER` — movimenta o estoque de forma **atômica** (lock `FOR UPDATE`) e grava a linha no extrato. Entrada recalcula o **custo médio ponderado** quando vem o custo do lote. Liberada para `admin` e `attendant` (o custo/preço não são alterados aqui).
@@ -190,6 +199,9 @@ Sistema web interno para o **Café Soli Deo Gloria**, usado por administradores 
 
 ### Função: create_product(p_payload jsonb)
 `SECURITY DEFINER` — cadastra um produto novo (nome, categoria, unidade, saldo inicial, custo, preço, mínimo e "precisa de preparo"). Quando o saldo inicial é maior que zero, grava a entrada inicial no extrato. Restrita a `admin`.
+
+### Função: deactivate_product(p_product_id uuid)
+`SECURITY DEFINER` — **soft delete** do produto: define `active = false` (e `updated_at = now()`) em vez de apagar o registro. O produto some do PDV e do Balcão (a view `products_catalog` filtra `active = true`) e do Estoque, mas o histórico de pedidos e movimentações antigas continua íntegro. Restrita a `admin`.
 
 ### Realtime
 Publicação `supabase_realtime` habilitada em `products`, `stock_movements`, `orders` e `order_items`.
@@ -237,3 +249,11 @@ Publicação `supabase_realtime` habilitada em `products`, `stock_movements`, `o
   - Cancelamento de item individual com devolução de estoque (nunca do entregue) e encerramento automático do bloco quando só restam itens entregues.
   - Simulador da maquininha liberado só para administrador, com indicação clara de teste.
 - Banco: colunas `orders.create_comanda` e `order_items.requires_preparation/delivered/cancelled`; funções `cancel_order_item` e `set_order_item_delivered`; `ingest_order` e `cancel_order` revisadas.
+
+### Phase 8: Refino de Comandas e Balcão
+- Goal: Fechar o ciclo das comandas (contas que acumulam rodadas) e tornar o disparo de pedidos à prova de erro humano.
+- Deliverable:
+  - Comandas: agrupadas por `comanda_id` (nomes iguais geram contas separadas). A comanda só sai da lista quando o pagamento é registrado em "Finalizar pedido" — entregar um pedido individual no Balcão apenas atualiza o status daquele pedido, mantendo a comanda aberta (inclusive com pedidos já entregues).
+  - Pedido: se houver comanda aberta com nome igual/parecido, o botão de envio fica **desabilitado** até o atendente escolher explicitamente "Juntar à conta [Nome]" ou "Não, é uma pessoa diferente — criar conta nova". Nada é associado automaticamente.
+  - Comanda: botão "+ Adicionar" no topo do detalhe abre o mesmo carrinho do PDV já vinculado à comanda aberta, sem os campos de cliente e "criar comanda".
+- Banco: coluna `orders.comanda_id`; `ingest_order` passou a gravar `comanda_id`. A lista de comandas abertas inclui pedidos `DELIVERED` ainda sem `payment_method`.

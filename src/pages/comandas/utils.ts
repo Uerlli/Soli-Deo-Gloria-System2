@@ -7,13 +7,20 @@ export const currency = new Intl.NumberFormat("pt-BR", {
 });
 
 export interface Comanda {
+  /** Identidade da comanda: o `comanda_id` quando existe; senão o nome normalizado. */
   key: string;
   label: string;
+  /** UUID real da comanda (null em pedidos antigos sem identificador). */
+  comandaId: string | null;
   orders: Order[];
   total: number;
   itemCount: number;
   latestAt: string;
 }
+
+/** Campos usados para montar as comandas abertas (aba Comandas e sugestões). */
+export const COMANDA_ORDER_SELECT =
+  "id, external_id, order_number, table_identifier, customer_name, status, total_amount, notes, source, payment_method, create_comanda, comanda_id, created_at, updated_at, items:order_items(id, order_id, product_id, product_name, quantity, unit_price, notes, delivered, cancelled, requires_preparation, created_at)";
 
 export const COMANDA_STATUS_META: Record<
   OrderStatus,
@@ -27,14 +34,21 @@ export const COMANDA_STATUS_META: Record<
 };
 
 export function buildComandas(orders: Order[]): Comanda[] {
-  const map = new Map<string, { label: string; list: Order[] }>();
+  const map = new Map<
+    string,
+    { label: string; comandaId: string | null; list: Order[] }
+  >();
 
   orders
     .filter((order) => order.create_comanda && order.customer_name?.trim())
     .forEach((order) => {
       const name = (order.customer_name ?? "").trim();
-      const key = normalizeName(name);
-      const entry = map.get(key) ?? { label: name, list: [] };
+      const comandaId = order.comanda_id ?? null;
+      // Agrupa pelo identificador próprio da comanda; pedidos antigos (sem id)
+      // caem no agrupamento pelo nome normalizado.
+      const key = comandaId ?? normalizeName(name);
+      const entry = map.get(key) ?? { label: name, comandaId, list: [] };
+      if (!entry.comandaId && comandaId) entry.comandaId = comandaId;
       entry.list.push(order);
       map.set(key, entry);
     });
@@ -60,6 +74,7 @@ export function buildComandas(orders: Order[]): Comanda[] {
     return {
       key,
       label: entry.label,
+      comandaId: entry.comandaId,
       orders: sorted,
       total,
       itemCount,

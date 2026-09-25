@@ -60,6 +60,7 @@ export default function EstoquePage() {
     registerMovement,
     updateSettings,
     createProduct,
+    deactivateProduct,
     dismissAlert,
   } = useInventory();
 
@@ -146,6 +147,15 @@ export default function EstoquePage() {
     const result = await createProduct(input);
     if (!result.error) {
       setToast({ text: "Produto cadastrado com sucesso.", tone: "success" });
+    }
+    return result;
+  };
+
+  const handleDeleteProduct = async () => {
+    if (!settings.product) return { error: "Produto não encontrado." };
+    const result = await deactivateProduct(settings.product.id);
+    if (!result.error) {
+      setToast({ text: "Produto removido do catálogo.", tone: "success" });
     }
     return result;
   };
@@ -393,8 +403,10 @@ export default function EstoquePage() {
       <StockSettingsModal
         open={settings.open}
         product={settings.product}
+        isAdmin={isAdmin}
         onClose={() => setSettings({ open: false, product: null })}
         onSubmit={handleSettings}
+        onDelete={handleDeleteProduct}
       />
 
       <StockHistoryDrawer

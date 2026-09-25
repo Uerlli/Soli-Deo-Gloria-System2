@@ -41,6 +41,7 @@ interface UseInventoryResult {
   registerMovement: (input: StockMovementInput) => Promise<{ error: string | null }>;
   updateSettings: (input: ProductSettingsInput) => Promise<{ error: string | null }>;
   createProduct: (input: NewProductInput) => Promise<{ error: string | null }>;
+  deactivateProduct: (productId: string) => Promise<{ error: string | null }>;
   dismissAlert: (id: string) => void;
 }
 
@@ -334,6 +335,31 @@ export function useInventory(): UseInventoryResult {
     [refresh]
   );
 
+  const deactivateProduct = useCallback(
+    async (productId: string) => {
+      try {
+        const { error: rpcError } = await supabase.rpc("deactivate_product", {
+          p_product_id: productId,
+        });
+
+        if (rpcError) {
+          if (rpcError.message?.includes("not authorized")) {
+            return { error: "Apenas administradores podem excluir produtos." };
+          }
+          if (rpcError.message?.includes("product not found")) {
+            return { error: "Produto não encontrado no catálogo." };
+          }
+          return { error: "Não foi possível excluir o produto." };
+        }
+        await refresh();
+        return { error: null };
+      } catch {
+        return { error: "Não foi possível excluir o produto." };
+      }
+    },
+    [refresh]
+  );
+
   const dismissAlert = useCallback((id: string) => {
     setAlerts((prev) => prev.filter((alert) => alert.id !== id));
   }, []);
@@ -385,6 +411,7 @@ export function useInventory(): UseInventoryResult {
     registerMovement,
     updateSettings,
     createProduct,
+    deactivateProduct,
     dismissAlert,
   };
 }

@@ -66,6 +66,8 @@ export interface Order {
   payment_method: PaymentMethod | null;
   /** true = pedido pertence a uma comanda que acumula rodadas. */
   create_comanda: boolean;
+  /** Identificador próprio da comanda (permite contas separadas com nomes iguais). */
+  comanda_id: string | null;
   created_at: string;
   updated_at: string;
   items: OrderItem[];
@@ -92,5 +94,7 @@ export interface OrderIngestPayload {
   source?: string;
   payment_method?: PaymentMethod | null;
   create_comanda?: boolean;
+  /** Identificador da comanda a que o pedido pertence (opcional). */
+  comanda_id?: string | null;
   items: OrderIngestItem[];
 }

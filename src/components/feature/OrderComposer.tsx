@@ -1,13 +1,40 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCatalog, getStockStatus } from "@/hooks/useCatalog";
 import { supabase } from "@/lib/supabase";
-import { findSimilarNames } from "@/lib/text";
-import type { OrderIngestPayload } from "@/types";
+import { matchSimilarNames } from "@/lib/text";
+import {
+  buildComandas,
+  COMANDA_ORDER_SELECT,
+  type Comanda,
+} from "@/pages/comandas/utils";
+import type { Order, OrderIngestPayload } from "@/types";
 
 const currency = new Intl.NumberFormat("pt-BR", {
   style: "currency",
   currency: "BRL",
 });
+
+/** Gera um identificador próprio de comanda (permite contas com nomes iguais). */
+function newComandaId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (char) => {
+    const rand = (Math.random() * 16) | 0;
+    const value = char === "x" ? rand : (rand & 0x3) | 0x8;
+    return value.toString(16);
+  });
+}
+
+/** Comanda à qual o pedido já está vinculado (modo "adicionar à comanda"). */
+export interface LockedComanda {
+  id: string | null;
+  name: string;
+}
+
+type ComandaChoice =
+  | { kind: "join"; comandaId: string | null; label: string }
+  | { kind: "separate" };
 
 export interface ComposerSeed {
   token: number;
@@ -38,6 +65,11 @@ interface OrderComposerProps {
   /** Mostra o saldo do item na listagem (usado pelo simulador do Balcão). */
   showStock?: boolean;
   seed?: ComposerSeed | null;
+  /**
+   * Quando definido, o pedido já nasce vinculado a esta comanda: os campos de
+   * cliente e "criar comanda" somem e o pedido cai direto na conta existente.
+   */
+  lockedComanda?: LockedComanda | null;
   onClose: () => void;
   onDispatched: (message: string) => void;
 }
@@ -65,6 +97,7 @@ export default function OrderComposer({
   submitIcon = "ri-send-plane-fill",
   showStock = false,
   seed,
+  lockedComanda = null,
   onClose,
   onDispatched,
 }: OrderComposerProps) {
@@ -74,7 +107,8 @@ export default function OrderComposer({
   const [cart, setCart] = useState<CartLine[]>([]);
   const [customerName, setCustomerName] = useState("");
   const [createComanda, setCreateComanda] = useState(false);
-  const [openComandas, setOpenComandas] = useState<string[]>([]);
+  const [openComandas, setOpenComandas] = useState<Comanda[]>([]);
+  const [comandaChoice, setComandaChoice] = useState<ComandaChoice | null>(null);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -105,36 +139,56 @@ export default function OrderComposer({
     }
   }, [open]);
 
-  // Comandas abertas (pedidos marcados como comanda e ainda em andamento).
+  // Comandas abertas (pedidos de comanda ainda não finalizados — inclusive os
+  // já entregues individualmente no balcão). Só saem daqui ao registrar o pagamento.
   useEffect(() => {
     if (!open) return undefined;
     let active = true;
     supabase
       .from("orders")
-      .select("customer_name")
+      .select(COMANDA_ORDER_SELECT)
       .eq("create_comanda", true)
-      .in("status", ["PENDING", "PREPARING", "READY"])
+      .neq("status", "CANCELLED")
+      .is("payment_method", null)
       .not("customer_name", "is", null)
+      .order("created_at", { ascending: true })
       .then(({ data }) => {
         if (!active) return;
-        const names = Array.from(
-          new Set(
-            ((data ?? []) as { customer_name: string | null }[])
-              .map((row) => (row.customer_name ?? "").trim())
-              .filter(Boolean)
-          )
-        );
-        setOpenComandas(names);
+        setOpenComandas(buildComandas((data as unknown as Order[]) ?? []));
       });
     return () => {
       active = false;
     };
   }, [open]);
 
-  const suggestions = useMemo(
-    () => (createComanda ? findSimilarNames(customerName, openComandas) : []),
-    [createComanda, customerName, openComandas]
-  );
+  // Comandas abertas com nome igual ou parecido com o que está sendo digitado.
+  const suggestions = useMemo(() => {
+    if (!createComanda || lockedComanda) return [];
+    const labels = openComandas.map((comanda) => comanda.label);
+    const matched = matchSimilarNames(customerName, labels);
+    return matched
+      .map((label) => openComandas.find((comanda) => comanda.label === label))
+      .filter((comanda): comanda is Comanda => Boolean(comanda));
+  }, [createComanda, customerName, openComandas, lockedComanda]);
+
+  // Há comanda com nome parecido e o atendente ainda não escolheu explicitamente.
+  const hasConflict =
+    !lockedComanda && createComanda && comandaChoice === null && suggestions.length > 0;
+
+  const handleJoinComanda = (comanda: Comanda) => {
+    setCustomerName(comanda.label);
+    setComandaChoice({
+      kind: "join",
+      comandaId: comanda.comandaId,
+      label: comanda.label,
+    });
+    setFormError(null);
+  };
+
+  const handleSeparateComanda = () => {
+    setComandaChoice({ kind: "separate" });
+    setFormError(null);
+  };
 
   useEffect(() => {
     if (!open) return undefined;
@@ -194,6 +248,7 @@ export default function OrderComposer({
     setCart([]);
     setCustomerName("");
     setCreateComanda(false);
+    setComandaChoice(null);
     setNotes("");
     setFormError(null);
   };
@@ -204,22 +259,41 @@ export default function OrderComposer({
       return;
     }
 
-    if (!customerName.trim()) {
+    if (!lockedComanda && !customerName.trim()) {
       setFormError("Informe o nome do cliente para finalizar o pedido.");
+      return;
+    }
+
+    // Trava: com nome igual/parecido, só envia após uma escolha explícita.
+    if (hasConflict) {
+      setFormError(
+        "Já existe uma comanda aberta com nome parecido. Escolha juntar à conta existente ou criar uma conta nova."
+      );
       return;
     }
 
     setSubmitting(true);
     setFormError(null);
 
+    const resolvedName = lockedComanda ? lockedComanda.name : customerName.trim();
+    const resolvedCreateComanda = lockedComanda ? true : createComanda;
+    let resolvedComandaId: string | null = null;
+    if (lockedComanda) {
+      resolvedComandaId = lockedComanda.id;
+    } else if (createComanda) {
+      resolvedComandaId =
+        comandaChoice?.kind === "join" ? comandaChoice.comandaId : newComandaId();
+    }
+
     const payload: OrderIngestPayload = {
       external_id: `${source.toUpperCase()}-${Date.now()}`,
       order_number: String(Math.floor(100 + Math.random() * 900)),
-      customer_name: customerName.trim(),
+      customer_name: resolvedName,
       notes: notes.trim() || null,
       total_amount: Number(total.toFixed(2)),
       source,
-      create_comanda: createComanda,
+      create_comanda: resolvedCreateComanda,
+      comanda_id: resolvedComandaId,
       items: cart.map((line) => ({
         product_id: line.productId,
         product_name: line.name,
@@ -385,70 +459,130 @@ export default function OrderComposer({
 
           <section className="flex min-h-0 flex-col">
             <div className="space-y-3 px-5 py-4">
-              <label className="block">
-                <span className="font-label text-[10px] uppercase tracking-wider text-foreground-500">
-                  Cliente <span className="text-primary-600">*</span>
-                </span>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={(event) => {
-                    setCustomerName(event.target.value);
-                    setFormError(null);
-                  }}
-                  placeholder="Nome do cliente"
-                  className="mt-1 h-10 w-full rounded-md border border-background-300 bg-background-50 px-3 text-sm text-foreground-950 outline-none transition-colors placeholder:text-foreground-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-200"
-                />
-              </label>
-
-              <button
-                type="button"
-                onClick={() => setCreateComanda((value) => !value)}
-                className="flex w-full cursor-pointer items-center justify-between rounded-md border border-background-300 bg-background-50 px-3 py-2.5 text-left transition-colors hover:bg-background-100"
-              >
-                <span>
-                  <span className="block text-sm font-medium text-foreground-900">
-                    Criar comanda
+              {lockedComanda ? (
+                <div className="flex items-center gap-3 rounded-md border border-secondary-200 bg-secondary-50 px-3 py-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-secondary-100 text-secondary-800">
+                    <i className="ri-restaurant-2-line text-lg" />
                   </span>
-                  <span className="block text-[11px] text-foreground-500">
-                    Abre uma conta que acumula outras rodadas. Desmarcado = venda avulsa, fechada na hora.
-                  </span>
-                </span>
-                <span
-                  className={[
-                    "flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
-                    createComanda ? "bg-primary-500" : "bg-background-300",
-                  ].join(" ")}
-                >
-                  <span
-                    className={[
-                      "h-5 w-5 rounded-full bg-background-50 transition-transform",
-                      createComanda ? "translate-x-5" : "translate-x-0",
-                    ].join(" ")}
-                  />
-                </span>
-              </button>
-
-              {suggestions.length > 0 && (
-                <div className="rounded-md border border-accent-200 bg-accent-50 px-3 py-2.5">
-                  <p className="flex items-center gap-1.5 text-[11px] font-medium text-accent-900">
-                    <i className="ri-user-search-line text-sm" />
-                    Já existe comanda aberta com nome parecido. Deseja juntar?
-                  </p>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
-                    {suggestions.map((name) => (
-                      <button
-                        key={name}
-                        type="button"
-                        onClick={() => setCustomerName(name)}
-                        className="flex cursor-pointer items-center gap-1 whitespace-nowrap rounded-full border border-accent-300 bg-background-50 px-2.5 py-1 text-xs font-medium text-accent-900 transition-colors hover:bg-accent-100"
-                      >
-                        <i className="ri-add-circle-line text-sm" />
-                        {name}
-                      </button>
-                    ))}
+                  <div className="min-w-0">
+                    <p className="font-label text-[10px] uppercase tracking-wider text-secondary-800">
+                      Lançando na comanda
+                    </p>
+                    <p className="truncate text-sm font-medium text-foreground-950">
+                      {lockedComanda.name}
+                    </p>
                   </div>
                 </div>
+              ) : (
+                <>
+                  <label className="block">
+                    <span className="font-label text-[10px] uppercase tracking-wider text-foreground-500">
+                      Cliente <span className="text-primary-600">*</span>
+                    </span>
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={(event) => {
+                        setCustomerName(event.target.value);
+                        setComandaChoice(null);
+                        setFormError(null);
+                      }}
+                      placeholder="Nome do cliente"
+                      className="mt-1 h-10 w-full rounded-md border border-background-300 bg-background-50 px-3 text-sm text-foreground-950 outline-none transition-colors placeholder:text-foreground-400 focus:border-primary-400 focus:ring-2 focus:ring-primary-200"
+                    />
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateComanda((value) => !value);
+                      setComandaChoice(null);
+                    }}
+                    className="flex w-full cursor-pointer items-center justify-between rounded-md border border-background-300 bg-background-50 px-3 py-2.5 text-left transition-colors hover:bg-background-100"
+                  >
+                    <span>
+                      <span className="block text-sm font-medium text-foreground-900">
+                        Criar comanda
+                      </span>
+                      <span className="block text-[11px] text-foreground-500">
+                        Abre uma conta que acumula outras rodadas. Desmarcado = venda avulsa, fechada na hora.
+                      </span>
+                    </span>
+                    <span
+                      className={[
+                        "flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors",
+                        createComanda ? "bg-primary-500" : "bg-background-300",
+                      ].join(" ")}
+                    >
+                      <span
+                        className={[
+                          "h-5 w-5 rounded-full bg-background-50 transition-transform",
+                          createComanda ? "translate-x-5" : "translate-x-0",
+                        ].join(" ")}
+                      />
+                    </span>
+                  </button>
+
+                  {hasConflict && (
+                    <div className="rounded-md border border-accent-300 bg-accent-50 px-3 py-3">
+                      <p className="flex items-start gap-2 text-[11px] font-medium leading-snug text-accent-900">
+                        <i className="ri-alert-line mt-0.5 shrink-0 text-sm" />
+                        <span>
+                          Atenção: já existe comanda aberta com nome igual ou parecido. Para
+                          enviar este pedido, escolha uma das opções abaixo — nada é enviado
+                          enquanto você não decidir.
+                        </span>
+                      </p>
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        {suggestions.map((comanda) => (
+                          <button
+                            key={comanda.key}
+                            type="button"
+                            onClick={() => handleJoinComanda(comanda)}
+                            className="flex cursor-pointer items-center gap-2 rounded-md border border-secondary-300 bg-background-50 px-2.5 py-1.5 text-left text-xs font-medium text-secondary-900 transition-colors hover:bg-secondary-100"
+                          >
+                            <i className="ri-add-circle-line text-sm" />
+                            <span className="whitespace-nowrap">
+                              Juntar à conta “{comanda.label}”
+                            </span>
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={handleSeparateComanda}
+                          className="flex cursor-pointer items-center gap-2 rounded-md border border-background-300 bg-background-50 px-2.5 py-1.5 text-left text-xs font-medium text-foreground-700 transition-colors hover:bg-background-100"
+                        >
+                          <i className="ri-user-add-line text-sm" />
+                          <span>Não, é uma pessoa diferente — criar conta nova</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {comandaChoice && (
+                    <div className="flex items-center justify-between gap-2 rounded-md border border-secondary-200 bg-secondary-50 px-3 py-2">
+                      <p className="flex items-center gap-1.5 text-[11px] font-medium text-secondary-900">
+                        <i
+                          className={
+                            comandaChoice.kind === "join"
+                              ? "ri-add-circle-line"
+                              : "ri-user-add-line"
+                          }
+                        />
+                        {comandaChoice.kind === "join"
+                          ? `Juntando à conta “${comandaChoice.label}”`
+                          : "Criando uma conta nova com este nome"}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setComandaChoice(null)}
+                        className="shrink-0 cursor-pointer whitespace-nowrap rounded-md border border-secondary-300 px-2 py-1 text-[11px] font-medium text-secondary-900 transition-colors hover:bg-secondary-100"
+                      >
+                        Trocar
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -562,7 +696,7 @@ export default function OrderComposer({
                 <button
                   type="button"
                   onClick={() => void handleDispatch()}
-                  disabled={submitting || cart.length === 0}
+                  disabled={submitting || cart.length === 0 || hasConflict}
                   className="flex flex-1 cursor-pointer items-center justify-center gap-2 whitespace-nowrap rounded-md bg-primary-500 px-4 py-2.5 text-sm font-medium text-background-50 transition-colors hover:bg-primary-600 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submitting ? (
